@@ -16,14 +16,16 @@ int run=1;
 int trigger=1;
 int handler=1;	
 pthread_mutex_t mutex;
-struct queue pid_list,sq[10],sjf;
+long dum;
+pthread_t threads[1];
+
+struct queue pid_list,sq[10];
 struct Par{
 	int schedpolicy;
 	int qt;
 	int qc;
 };
-struct Par *par={0};
-
+struct Par *par;
 void help() {
 	printf("This is manual page\n");
 	printf("This shell supports the following commands:\n");
@@ -101,20 +103,25 @@ void childdead(int signum){
 	{
 		fg_pid=0;
 	}
-	
+	if(par->schedpolicy>1)
+	{
 	kill(getpid(),SIGUSR2);
+	}
 }
 void brkpause(int signum)
 {
 signal(SIGUSR2,brkpause);
 pthread_mutex_unlock(&mutex);
+
 }
 
 void *RR(void *dum)
-{		sleep(2);
+{			while(1)
 			while(sq[0].head!=NULL)// scheduling loop
 			{	
-			
+				sleep(2);
+				while(sq[0].head!=NULL)
+				{
 				kill(sq[0].head->pid,SIGCONT);
 				usleep(1000*par->qt);
 				
@@ -136,15 +143,53 @@ void *RR(void *dum)
 				    
 				    /* mark chils as dead */
 				    }
+				}
 			       
 			    }
 }
 void *MFQ(void *dum)
-{		  sleep(2);
+{		     while(1)
+		     while(sq[0].head!=NULL)
+		  	{ sleep(2);
 		     for(int i=0;i<par->qc;i++)
-			while(sq[i].head!=NULL)// scheduling loop
+			{
+			while(sq[0].head!=NULL)// scheduling loop
 			{	
-			    // printf("%d %d", par->schedpolicy,par->qt);
+			   
+			      /* send the signal SIGCONT to the first element in queue */
+				
+				kill(sq[0].head->pid,SIGCONT);
+				usleep(1000*(2*i+1)*par->qt);
+				
+
+			 	if(handler)
+				{
+				    kill(sq[0].head->pid,SIGUSR1); 
+				    usleep(1000);
+				    if(par->qc==1)
+				    enqueue(dequeue(&sq[0]),NULL,0,&sq[0]);  
+				    else
+					enqueue(dequeue(&sq[0]),NULL,0,&sq[1]); 
+				   
+				  /* dequeue and re-enqueue */
+				    }
+
+				else
+				  {
+				    /* remove from list */
+				   dequeue(&sq[0]);
+				    handler=1;
+				    
+				    /* mark chils as dead */
+				    }
+			       
+			    }
+			while(i>0&&sq[i].head!=NULL)
+			{	if(sq[0].head!=NULL)
+				{i=0;
+				  break;
+				}
+
 			      /* send the signal SIGCONT to the first element in queue */
 				
 				kill(sq[i].head->pid,SIGCONT);
@@ -173,12 +218,15 @@ void *MFQ(void *dum)
 				    }
 			       
 			    }
+			}
+	}
 }
 void *FCFS(void *dum)
 {
-		sleep(2);
+			while(1)
 			while(sq[0].head!=NULL)// scheduling loop
-			{	signal(SIGUSR2,brkpause);
+			{	sleep(2);
+				signal(SIGUSR2,brkpause);
 				pthread_mutex_lock(&mutex);
 			
 				kill(sq[0].head->pid,SIGCONT);
@@ -192,24 +240,25 @@ void *FCFS(void *dum)
 			    }
 		}
 void *SJF(void *dum)
-{
+{int temp;
 		
-			sleep(2);
+			while(1)
 			while(sq[0].head!=NULL)// scheduling loop
-			{	
+			{	sleep(2);
 				//sort(&sq[0],&sjf);
 				
-				while(sjf.head!=NULL)
-				{
+				while(sq[0].head!=NULL)
+				{ 
 				signal(SIGUSR2,brkpause);
+				
 				pthread_mutex_lock(&mutex);
-
-				kill(sjf.head->pid,SIGCONT);
-
-				printf("%d %d %d", par->schedpolicy,par->qt,sjf.head->pid);
+				
+				kill(sq[0].head->pid,SIGCONT);
+				dequeue(&sq[0]);
+				//printf("%d %d %d", par->schedpolicy,par->qt,sjf.head->pid);
 				pthread_mutex_lock(&mutex);
 				pthread_mutex_unlock(&mutex);
-				   dequeue(&sjf);
+				   
 				    handler=1;
 			       }
 			    }
@@ -217,12 +266,17 @@ void *SJF(void *dum)
 
 void scheduling(char* policy)
 {
-	par= (struct Par *)malloc(sizeof(struct Par));
+	if(par->schedpolicy!=5)
+	pthread_cancel(threads[0]);
+	
+
+	
         if (strcmp(policy,"RR")==0)
 	{
 		printf("enter quntum time:");
 		scanf("%d",&par->qt);
 		par->schedpolicy=0;
+		pthread_create(&threads[0], NULL, RR, (void *)dum);
 	}
 	else if (strcmp(policy,"MFQ")==0)
 	{
@@ -231,23 +285,25 @@ void scheduling(char* policy)
 		printf("enter number of queues:");
 		scanf("%d",&par->qc);
 		par->schedpolicy=1;
+		pthread_create(&threads[0], NULL, MFQ, (void *)dum);
 	}
 	else if (strcmp(policy,"FCFS")==0)
 	{
 		
 		par->schedpolicy=2;
+		pthread_create(&threads[0], NULL, FCFS, (void *)dum);
 	}
 	
 	else if (strcmp(policy,"SJF")==0)
 	{
 		par->schedpolicy=3;
+		pthread_create(&threads[0], NULL, SJF, (void *)dum);
 	}
 	else
 	{
 	printf("no such policy\n policies list:\n\t RR\n\t MFQ\n\t FCFS\n\t SJF\n");
 	return;
-	}
-
+	}			
 	
 }
 
@@ -255,7 +311,7 @@ void exec(char *input) {
 	int i,t,status;
 	char *args[10];
 	char *temp;
-	
+	signal(SIGUSR2,brkpause);
 	struct node *p;
 
 	for (i = 0; i < 10; i++)
@@ -278,8 +334,16 @@ void exec(char *input) {
 		execv(args[0],args);
 	}
 	enqueue(t,args[0],0,&pid_list);
+
+
+	//scheduling QUEUE
+	if(par->schedpolicy!=3)
 	enqueue(t,args[0],atoi(args[1])*atoi(args[2]),&sq[0]);
-	insert(t,args[0],atoi(args[1])*atoi(args[2]),&sjf);
+	else
+	{
+	insert(t,args[0],atoi(args[1])*atoi(args[2]),&sq[0]);
+	}
+
 	/*if (args[i-1]!=NULL)
 	{
 		fg_pid=t;
@@ -287,7 +351,10 @@ void exec(char *input) {
 			pause();
 	}*/
 
-	
+
+	//default scheduling
+	if(par->schedpolicy==5)
+	scheduling("FCFS");
 
 
 }
@@ -328,11 +395,10 @@ void cont (int signum) {
 }
 
 int main(int argc, char const *argv[])
-{
+{par=(struct Par *)malloc(sizeof(struct Par));
 	char input[15][30];
 	int argnum, i;
-	long dum;
-	pthread_t threads[1];
+	par->schedpolicy=5;
 	pid_list.head=NULL;
 	pid_list.tail=NULL;
 	enqueue(getppid(),"NEW SHELL",0,&pid_list); 
@@ -357,15 +423,7 @@ int main(int argc, char const *argv[])
 		else if (strcmp(input[0],"set_scheduling")==0 && argnum==1) scheduling(input[1]);
 		else if (strcmp(input[0],"exec")==0 && argnum!=0) 
 			{
-			for (i=1; i<=argnum; i++) exec(input[i]);
-			if(par->schedpolicy==0)
-			pthread_create(&threads[0], NULL, RR, (void *)dum);
-			else if(par->schedpolicy==1)
-			pthread_create(&threads[0], NULL, MFQ, (void *)dum);
-			else if(par->schedpolicy==2)
-			pthread_create(&threads[0], NULL, FCFS, (void *)dum);
-			else if(par->schedpolicy==3)
-			pthread_create(&threads[0], NULL, SJF, (void *)dum);
+			for (i=1; i<=argnum; i++) exec(input[i]); 
 			}
 		else if (strcmp(input[0],"exit")==0 && argnum==0) myexit();
 	    else printf("Nosuch command. Check help for help.\n");
